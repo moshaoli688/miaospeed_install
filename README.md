@@ -18,13 +18,13 @@
 1. **下载并运行脚本 / Download and Run the Script:**
 
    ```sh
-   curl -sL https://raw.githubusercontent.com/MiaoMagic/miaospeed_install/refs/heads/master/install.sh -o install.sh && sh install.sh --uid=<UID> --port=<PORT>
+   curl -sL https://raw.githubusercontent.com/moshaoli688/miaospeed_install/refs/heads/master/install.sh -o install.sh && sh install.sh --uid=<UID> --port=<PORT>
    ```
 
 2. **或者手动下载并运行 / Alternatively, download and run manually:**
 
    ```sh
-   curl -sL https://raw.githubusercontent.com/MiaoMagic/miaospeed_install/refs/heads/master/install.sh -o install.sh
+   curl -sL https://raw.githubusercontent.com/moshaoli688/miaospeed_install/refs/heads/master/install.sh -o install.sh
    sh install.sh --uid=<UID> --port=<PORT>
    ```
 ## 配置 / Configuration
