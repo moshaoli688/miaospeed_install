@@ -202,11 +202,11 @@ run_command() {
   echo "============================================================================"
 
   echo "====================== Generating Configuration Files ======================"
-  generate_frpc_config ./frpc.toml $MS_UID $FRP_SERVER $FRP_SERVER_PORT $FRP_SERVER_TOKEN $FRP_SERVER_PROTOCOL "" "" "miaospeed:tcp:127.0.0.1:$MS_PORT:$MS_PORT"
   generate_env_file ./.env $MS_PORT $MS_TOKEN "/$MS_PATH" "0.0.0.0" "" "" "16" "" "" "true" $NOSPEED "" "" "" ""
   generate_server_file $MS_INIT miaospeed "Miaospeed Backend" $MS_WORK_DIR_ABS/miaospeed.pro "server" $MS_WORK_DIR_ABS/.env
   enable_service $MS_INIT miaospeed
   # If you need FRP for internal network penetration, please uncomment the following line
+  # generate_frpc_config ./frpc.toml $MS_UID $FRP_SERVER $FRP_SERVER_PORT $FRP_SERVER_TOKEN $FRP_SERVER_PROTOCOL "" "" "miaospeed:tcp:127.0.0.1:$MS_PORT:$MS_PORT"
   # generate_server_file $MS_INIT miaospeed_frpc "Miaospeed Frp Client " $MS_WORK_DIR_ABS/frpc "-c $MS_WORK_DIR_ABS/frpc.toml"
   # enable_service $MS_INIT miaospeed_frpc
   echo "============================================================================"
