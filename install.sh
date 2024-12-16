@@ -711,12 +711,29 @@ EOF
 case "\$1" in
     start)
         echo "Starting ${SERVICE_NAME}..."
-        export \$(cat ${ENV_FILE})
+        if [ -f "${ENV_FILE}" ]; then
+            . "${ENV_FILE}"
+        else
+            echo "Error: Environment file ${ENV_FILE} not found."
+            exit 1
+        fi
+
         nohup ${EXEC_PATH} ${ARGS} > /var/log/${SERVICE_NAME}.log 2>&1 &
         ;;
     stop)
         echo "Stopping ${SERVICE_NAME}..."
-        pkill -f "${EXEC_PATH} ${ARGS}"
+        
+        if cat /etc/openwrt_release >/dev/null 2>&1; then
+            PID_TO_KILL=\$(ps | grep -v grep | grep -F "${EXEC_PATH}" | awk '{print \$1}')
+        else
+            PID_TO_KILL=\$(ps -ef | grep -v grep | grep -F "${EXEC_PATH}" | awk '{print \$1}')
+        fi
+        if [ -n "\$PID_TO_KILL" ]; then
+            kill "\$PID_TO_KILL"
+            echo "Stopped process with PID: \$PID_TO_KILL"
+        else
+            echo "No matching process found to stop."
+        fi
         ;;
     restart)
         \$0 stop
@@ -728,8 +745,30 @@ case "\$1" in
         ;;
 esac
 EOF
+
     chmod +x /etc/init.d/${SERVICE_NAME}
     echo "SysVinit script created at /etc/init.d/${SERVICE_NAME}"
+  }
+
+  # 生成 OpenRC 脚本
+  generate_openrc() {
+    cat <<EOF >/etc/init.d/${SERVICE_NAME}
+#!/sbin/openrc-run
+
+description="${SERVICE_DESC}"
+command="${EXEC_PATH}"
+command_args="${ARGS}"
+pidfile="/var/run/${SERVICE_NAME}.pid"
+command_background="yes"
+output_log="/var/log/${SERVICE_NAME}.log"
+error_log="/var/log/${SERVICE_NAME}.err"
+
+depend() {
+    need net
+}
+EOF
+    chmod +x /etc/init.d/${SERVICE_NAME}
+    echo "OpenRC script created at /etc/init.d/${SERVICE_NAME}"
   }
 
   generate_openrc() {
