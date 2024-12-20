@@ -576,9 +576,11 @@ generate_frpc_config() {
     echo "transport.poolCount = 2"
     echo "transport.protocol = \"$protocol\""
     echo "transport.tcpMux = true"
-    echo "transport.tls.enable = true"
-    echo "transport.tls.certFile = \"$tls_cert\""
-    echo "transport.tls.keyFile = \"$tls_key\""
+    if [ -n "$tls_cert" ] && [ -n "$tls_key" ]; then
+      echo "transport.tls.enable = true"
+      echo "transport.tls.certFile = \"$tls_cert\""
+      echo "transport.tls.keyFile = \"$tls_key\""
+    fi
     echo "dnsServer = \"119.29.29.29\""
     echo ""
 
