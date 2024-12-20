@@ -17,27 +17,50 @@ MS_INIT=""
 MS_ARCH=""
 MS_WORK_DIR=""
 MS_WORK_DIR_ABS=""
-
 # Proxy server configuration, modify as needed
 PROXY_URLS="https://www.demo.com/gh/,https://www.demo2.com/gh/"
 # FRP server settings, modify as needed
 FRP_SERVER="1.1.1.1"
 FRP_SERVER_TOKEN="2.2.2.2"
-FRP_SERVER_PORT="7777"
+FRP_SERVER_PORT="8000"
 FRP_SERVER_PROTOCOL="tcp"
+
+check_prerequisites() {
+  if [ "$(id -u)" -ne 0 ]; then
+    echo "Error: This script must be run as root." >&2
+    exit 1
+  fi
+
+  local required_commands="grep awk tr cat curl"
+  local optional_commands="hostname lscpu lsblk sha256sum shasum openssl"
+
+  for cmd in $required_commands; do
+    if ! command -v $cmd >/dev/null 2>&1; then
+      echo "Error: Required command '$cmd' is not installed." >&2
+      exit 1
+    fi
+  done
+
+  for cmd in $optional_commands; do
+    if ! command -v $cmd >/dev/null 2>&1; then
+      echo "Warning: Optional command '$cmd' is not installed. Falling back to alternatives if needed." >&2
+    fi
+  done
+
+  echo "All prerequisites are satisfied."
+}
 
 generate_uuid() {
   local uuid=""
-
   if [ -f /proc/sys/kernel/random/uuid ]; then
     uuid=$(cat /proc/sys/kernel/random/uuid)
-    echo "$uuid"
+    echo "$uuid" # 返回 UUID
     return 0
   fi
 
   if command -v uuidgen >/dev/null 2>&1; then
     uuid=$(uuidgen)
-    echo "$uuid"
+    echo "$uuid" # 返回 UUID
     return 0
   fi
 
@@ -56,17 +79,11 @@ generate_uuid() {
 validate_port() {
   local port="$1"
 
-  if [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
-    echo "Invalid port: $port. Port must be between 1 and 65535."
+  if ! [ "$port" -eq "$port" ] 2>/dev/null || [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
+    echo "Invalid port: $port. Port must be a number between 1 and 65535."
     exit 1
   fi
 
-  if [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
-    echo "Invalid port: $port. Port must be between 1 and 65535."
-    exit 1
-  fi
-
-  # If needed, you can add additional port occupation checks here (e.g., by requesting an external API for validation)
 }
 
 parse_args() {
@@ -106,7 +123,6 @@ parse_args() {
     esac
   done
 }
-
 show_help() {
   echo "Usage: $0 [options]"
   echo ""
@@ -120,7 +136,6 @@ show_help() {
   echo "  -h, --help         Show this help message"
   exit 0
 }
-
 validate_required_params() {
   if [ -z "$MS_UID" ]; then
     echo "Error: --uid is required"
@@ -132,7 +147,6 @@ validate_required_params() {
     exit 1
   fi
 }
-
 handle_defaults() {
   MS_ARCH=$(detect_architecture)
   MS_INIT=$(detect_init_system)
@@ -158,7 +172,7 @@ handle_defaults() {
   fi
 
   if [ -z "$MS_PATH" ]; then
-    MS_PATH="$MS_TOKEN"
+    MS_PATH=$(generate_feature_code)
     echo "No path provided, using token as path: $MS_PATH"
   fi
 }
@@ -181,13 +195,15 @@ print_params() {
 run_command() {
   local NOSPEED="false"
   print_params
+
+
   echo "Do you want to continue with the deployment? (y/Y to continue, any other key to cancel)"
   read -r confirm
   if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
     echo "Deployment cancelled."
     return 1
   fi
-  clear
+
   if [ "$MS_NOSPEED" = "true" ]; then
     echo "Speed is disabled"
     NOSPEED=true
@@ -216,6 +232,7 @@ run_command() {
   echo "Please copy the following configuration details and provide them to the MiaoKo administrator:"
   print_params
 }
+
 detect_architecture() {
   if ! command -v uname >/dev/null 2>&1; then
     echo "ERROR: 'uname' command not found. Unable to determine architecture." >&2
@@ -269,14 +286,14 @@ detect_init_system() {
     echo "launchd"
   elif command -v systemctl >/dev/null 2>&1; then
     echo "systemd"
+  elif [ -f /etc/openwrt_release ]; then
+    echo "openwrt"
   elif [ -d /etc/rc.d ] || [ -f /etc/init.d/rc ]; then
     echo "sysvinit"
   elif [ -f /sbin/openrc-run ]; then
     echo "openrc"
   elif command -v initctl >/dev/null 2>&1; then
     echo "upstart"
-  elif [ -d /etc/init.d ]; then
-    echo "openwrt"
   else
     echo "unknown"
   fi
@@ -304,14 +321,17 @@ check_cpu_support() {
         return 0
       fi
     fi
+
     if cat /proc/cpuinfo | grep -q "$instruction"; then
       return 0
     fi
+
   elif [ "$os" = "Darwin" ]; then
     if sysctl -a | grep -q "$instruction"; then
       return 0
     fi
   fi
+
   return 1
 }
 
@@ -323,7 +343,6 @@ get_latest_tag() {
     echo "ERROR: Repository is required as the first argument."
     return 1
   fi
-
   local json=$(curl -s "https://api.github.com/repos/$repo/releases")
 
   if [ "$include_pre" = "true" ]; then
@@ -366,7 +385,6 @@ get_download_url() {
   local optimized_versions=$(echo "$json" | grep "browser_download_url" | grep "${os}_${arch}" | grep -E 'v2|v3|v4')
   if [ -n "$optimized_versions" ]; then
     echo "INFO: Optimized versions found for ${os}_${arch}." >&2
-
     if [ "$supports_v4" = "true" ]; then
       fileurl=$(echo "$optimized_versions" | grep "v4" | cut -d '"' -f 4)
     fi
@@ -418,26 +436,20 @@ download_latest_program() {
   if [ $? -ne 0 ]; then
     return 1
   fi
-
   arch=$MS_ARCH
   if [ $? -ne 0 ]; then
     return 1
   fi
 
   echo "Detected OS: $os, Architecture: $arch"
-
   fileurl=$(get_download_url "$repo" "$tag" "$os" "$arch")
-
   if [ $? -ne 0 ]; then
     echo "ERROR: Failed to get download URL for $program_name."
     return 1
   fi
-
   echo "$program_name Release URL: $fileurl"
-
   file_name=$(basename "$fileurl")
   output_path="./$file_name"
-
   try_download() {
     url="$1"
     output="$2"
@@ -445,7 +457,6 @@ download_latest_program() {
     curl -fSL -o "$output" "$url"
     return $?
   }
-
   try_download "$fileurl" "$output_path"
   if [ $? -ne 0 ]; then
     echo "Direct download failed. Trying proxies..."
@@ -460,12 +471,10 @@ download_latest_program() {
       fi
     done
   fi
-
   if [ ! -f "$output_path" ]; then
     echo "ERROR: Failed to download $file_name from all sources."
     return 1
-  fi
-
+  fi 
   echo "Unzipping $program_name: $file_name"
   case "$file_name" in
   *.tar.gz | *.tgz)
@@ -499,9 +508,7 @@ download_latest_program() {
     echo "ERROR: Failed to extract $file_name"
     return 1
   fi
-
   echo "$program_name extracted successfully to $MS_WORK_DIR"
-
   rm -f "$output_path" README.md frp*.toml LICENSE
   chmod +x $program_name*
 
@@ -509,6 +516,34 @@ download_latest_program() {
   return 0
 }
 
+generate_feature_code() {
+  local original_lang host_name cpu_info merged_info feature_code
+  (
+    export LANG=en_US.UTF-8
+
+    host_name=$(hostname)
+
+    if command -v lscpu >/dev/null 2>&1; then
+      cpu_info=$(lscpu | grep "Model name" | awk -F: '{print $2}' | tr -d ' ')
+    elif [ -f "/proc/cpuinfo" ]; then
+      cpu_info=$(grep -m 1 "model name" /proc/cpuinfo | awk -F: '{print $2}' | tr -d ' ')
+    else
+      cpu_info="unknown"
+    fi
+    merged_info="${host_name}${cpu_info}$(generate_uuid)"
+
+    if command -v sha256sum >/dev/null 2>&1; then
+      feature_code=$(echo -n "$merged_info" | sha256sum | awk '{print $1}')
+    elif command -v shasum >/dev/null 2>&1; then
+      feature_code=$(echo -n "$merged_info" | shasum -a 256 | awk '{print $1}')
+    elif command -v openssl >/dev/null 2>&1; then
+      feature_code=$(echo -n "$merged_info" | openssl dgst -sha256 | awk '{print $2}')
+    else
+      feature_code="SHA-256 command not found"
+    fi
+    echo "$feature_code"
+  )
+}
 generate_frpc_config() {
   local config_path="$1"
   local uid="$2"
@@ -541,11 +576,9 @@ generate_frpc_config() {
     echo "transport.poolCount = 2"
     echo "transport.protocol = \"$protocol\""
     echo "transport.tcpMux = true"
-    if [ -n "$tls_cert" ] && [ -n "$tls_key" ]; then
-      echo "transport.tls.enable = true"
-      echo "transport.tls.certFile = \"$tls_cert\""
-      echo "transport.tls.keyFile = \"$tls_key\""
-    fi
+    echo "transport.tls.enable = true"
+    echo "transport.tls.certFile = \"$tls_cert\""
+    echo "transport.tls.keyFile = \"$tls_key\""
     echo "dnsServer = \"119.29.29.29\""
     echo ""
 
@@ -577,21 +610,19 @@ generate_env_file() {
   local port="$2"
   local token="$3"
   local path="$4"
-
-  # Optional parameters
-  local bind="$5"            # Bind address
-  local allow_ips="$6"       # Allowed IP range
-  local block_ips="$7"       # Blocked IP range
-  local conn_threads="$8"    # Number of threads
-  local speed_limit="$9"     # Speed limit
-  local pause_second="${10}" # Pause seconds after each speed task
-  local mtls="${11}"         # Whether to enable MTLS (Mutual TLS)
-  local no_speed="${12}"     # Whether to disable speed test feature
-  local task_weight="${13}"  # Whether to enable task weight
-  local mmdb="${14}"         # MaxMind DB path
-  local cert="${15}"         # Custom certificate path
-  local key="${16}"          # Custom key path
-  local whitelist="${17}"    # Whitelist of allowed users
+  local bind="$5"
+  local allow_ips="$6"
+  local block_ips="$7"
+  local conn_threads="$8"
+  local speed_limit="$9"
+  local pause_second="${10}"
+  local mtls="${11}"
+  local no_speed="${12}"
+  local task_weight="${13}"
+  local mmdb="${14}"
+  local cert="${15}"
+  local key="${16}"
+  local whitelist="${17}"
 
   if [ -z "$config_path" ] || [ -z "$port" ] || [ -z "$token" ] || [ -z "$path" ]; then
     echo "Usage: generate_env_file <config_path> <port> <token> <path> [optional parameters...]"
@@ -611,7 +642,6 @@ generate_env_file() {
     echo "# Customized websocket path"
     echo "URL_PATH=$path"
     echo ""
-
     [ -n "$allow_ips" ] && echo "ALLOW_IPS=$allow_ips"
     [ -n "$block_ips" ] && echo "BLOCK_IPS=$block_ips"
     [ -n "$conn_threads" ] && echo "CONNTHREAD=$conn_threads"
@@ -636,7 +666,6 @@ generate_server_file() {
   local EXEC_PATH="$4"
   local ARGS="$5"
   local ENV_FILE="$6"
-
   if [ -z "$SERVICE_TYPE" ] || [ -z "$SERVICE_NAME" ] || [ -z "$EXEC_PATH" ]; then
     echo "Error: Missing required arguments."
     show_usage
@@ -682,8 +711,10 @@ ENV_FILE="${ENV_FILE}"
 start_service() {
     procd_open_instance
     procd_set_param command \$PROG \$ARGS
-    procd_set_param env \$(cat "\$ENV_FILE" | xargs)
-    procd_set_param respawn
+    if [ -f "\$ENV_FILE" ]; then
+        procd_set_param env \$(cat "\$ENV_FILE" | xargs)
+    fi
+    procd_set_param respawn 3600 5 0
     procd_close_instance
 }
 
@@ -749,8 +780,6 @@ EOF
     chmod +x /etc/init.d/${SERVICE_NAME}
     echo "SysVinit script created at /etc/init.d/${SERVICE_NAME}"
   }
-
-  # 生成 OpenRC 脚本
   generate_openrc() {
     cat <<EOF >/etc/init.d/${SERVICE_NAME}
 #!/sbin/openrc-run
@@ -770,27 +799,6 @@ EOF
     chmod +x /etc/init.d/${SERVICE_NAME}
     echo "OpenRC script created at /etc/init.d/${SERVICE_NAME}"
   }
-
-  generate_openrc() {
-    cat <<EOF >/etc/init.d/${SERVICE_NAME}
-#!/sbin/openrc-run
-
-description="${SERVICE_DESC}"
-command="${EXEC_PATH}"
-command_args="${ARGS}"
-pidfile="/var/run/${SERVICE_NAME}.pid"
-command_background="yes"
-output_log="/var/log/${SERVICE_NAME}.log"
-error_log="/var/log/${SERVICE_NAME}.err"
-
-depend() {
-    need net
-}
-EOF
-    chmod +x /etc/init.d/${SERVICE_NAME}
-    echo "OpenRC script created at /etc/init.d/${SERVICE_NAME}"
-  }
-
   generate_upstart() {
     cat <<EOF >/etc/init/${SERVICE_NAME}.conf
 description "${SERVICE_DESC}"
@@ -899,6 +907,7 @@ enable_service() {
     update-rc.d ${SERVICE_NAME} defaults
     service ${SERVICE_NAME} start
     echo "SysVinit service '${SERVICE_NAME}' enabled and started on boot."
+
     service ${SERVICE_NAME} status
     ;;
   openrc)
@@ -911,7 +920,6 @@ enable_service() {
     echo "Upstart service '${SERVICE_NAME}' does not require explicit enabling for services; ensure the config is correct."
     service ${SERVICE_NAME} start
     echo "Upstart service '${SERVICE_NAME}' started."
-
     service ${SERVICE_NAME} status
     ;;
   launchd)
@@ -929,8 +937,10 @@ enable_service() {
   esac
   return 0
 }
+clear
 
 parse_args "$@"
+check_prerequisites
 validate_required_params
 validate_port "$MS_PORT"
 handle_defaults
