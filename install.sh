@@ -208,12 +208,12 @@ run_command() {
     echo "Speed is disabled"
     NOSPEED=true
   fi
-  echo "============================ Downloading FRP ==============================="
-  download_latest_program "fatedier/frp" "false" "frp"
-  rm -f frps
-  echo "============================================================================"
+  #echo "============================ Downloading FRP ==============================="
+  #download_latest_program "fatedier/frp" "false" "frp"
+  #rm -f frps
+  #echo "============================================================================"
   echo "========================== Downloading MiaoSpeed ==========================="
-  download_latest_program "moshaoli688/miaospeed" "true" "miaospeed"
+  download_latest_program "MiaoMagic/miaospeed" "true" "miaospeed"
   rm -f .env.example
   echo "============================================================================"
 
